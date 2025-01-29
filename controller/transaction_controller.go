@@ -28,12 +28,9 @@ func CreateTransactionHandler(svc *services.TransactionService, ctx iris.Context
 		return
 	}
 
-	fmt.Println("pay detail", req.PaymentDetails.CardNumber, "status", req.Status,
-		"payment method id", req.PaymentDetails.ExpiryDate, "transaction id", req.PaymentDetails.CVV)
-
 	// Create the transaction
 	reservedAmount := 0.0
-	transaction, err := svc.InitializeTransaction(ctx, payerId, req.PayeeID, req.Amount, req.TransactionType, req.Status, reservedAmount, req.PaymentMethodID, req.PaymentDetails)
+	transaction, err := svc.InitializeTransaction(ctx, payerId, req.PayeeID, req.Amount, req.TransactionType, req.Status, reservedAmount, req.TransactionID, req.PaymentMethodID, req.PaymentDetails)
 	if err != nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		ctx.JSON(map[string]string{"error": err.Error()})
@@ -41,13 +38,19 @@ func CreateTransactionHandler(svc *services.TransactionService, ctx iris.Context
 	}
 
 	ctx.StatusCode(iris.StatusCreated)
-	// ctx.JSON(transaction)
 	ctx.JSON(iris.Map{
 		"transaction_id": transaction.TransactionID,
 		"status":         transaction.Status,
 		"message":        "Transaction Completed Successfully.",
 	})
 }
+
+// type Transaction struct {
+// 	TransactionID string
+// 	PaymentMethod string
+// 	Amount        float64
+// 	Date          string
+// }
 
 // ListTransactionsHandler lists all transactions for the authenticated user
 func ListTransactionsHandler(svc *services.TransactionService, ctx iris.Context) {
@@ -60,12 +63,27 @@ func ListTransactionsHandler(svc *services.TransactionService, ctx iris.Context)
 	}
 
 	// Fetch transactions
-	// transactions, err := svc.ListTransactions(ctx.Request().Context(), userID)
-	// if err != nil {
-	// 	ctx.StatusCode(iris.StatusInternalServerError)
-	// 	ctx.JSON(map[string]string{"error": err.Error()})
-	// 	return
-	// }
+	transactions, err := svc.ListTransactions(ctx.Request().Context(), userID)
+	if err != nil {
+		ctx.StatusCode(iris.StatusInternalServerError)
+		ctx.JSON(map[string]string{"error": err.Error()})
+		return
+	}
 
-	ctx.JSON(nil)
+	// Define a slice to store the simplified results
+	var transactionDetails []map[string]string
+
+	// Loop through each transaction and extract only the desired fields
+	for _, t := range transactions {
+		transactionDetails = append(transactionDetails, map[string]string{
+			"transaction_id":    t.TransactionID,
+			"payment_method_id": t.PaymentMethodID,
+			"transaction_type":  t.TransactionType,
+			"status":            t.Status,
+			"payer_name":        t.Payer.Name,
+			"amount":            fmt.Sprintf("%.2f", t.Amount),
+		})
+	}
+
+	ctx.JSON(transactionDetails)
 }

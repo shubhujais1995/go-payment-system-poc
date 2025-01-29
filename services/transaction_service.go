@@ -5,12 +5,25 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"poc/model"
 	"poc/utils"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+var errorLogger *log.Logger
+
+func init() {
+	errorLogFile, err := os.OpenFile("error.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		fmt.Println("Error opening log file:", err)
+		return
+	}
+	errorLogger = log.New(errorLogFile, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
+}
 
 type TransactionService struct {
 	DB                   *gorm.DB
@@ -24,76 +37,75 @@ func NewTransactionService(db *gorm.DB, pmService *PaymentMethodService) *Transa
 	}
 }
 
-func (svc *TransactionService) InitializeTransaction(ctx context.Context, payerID, payeeID string, amount float64, transactionType, status string, reservedAmount float64, paymentMethodID string, paymentDetail model.PaymentDetails) (*model.Transaction, error) {
-
-	// err := svc.DB.Transaction(func(tx *gorm.DB) error {
-
-	// 	var payer model.Payer
-	// 	if err := svc.DB.First(&payer, "PayerID = ?", payerID).Error; err != nil {
-	// 		return err
-	// 	}
-
-	// 	// Step 3: Check if the payee exists
-	// 	var payee model.Payee
-	// 	if err := svc.DB.First(&payee, "PayeeID = ?", payeeID).Error; err != nil {
-	// 		return err
-	// 	}
-
-	// 	// return nil will commit the whole transaction
-	// 	return nil
-	// })
-
-	/***********************/
-
-	// Step 1: Check if the payer exists
+func (svc *TransactionService) getPayerAndPayee(payerID, payeeID string) (*model.Payer, *model.Payee, error) {
+	// Retrieve payer
 	var payer model.Payer
 	if err := svc.DB.First(&payer, "PayerID = ?", payerID).Error; err != nil {
-		return nil, fmt.Errorf("payer with PayerID %s does not exist", payerID)
+		// Log the error to the file
+		errorLogger.Printf("Failed to retrieve payer with PayerID %s: %v\n", payerID, err)
+		// Return nil for payer and a custom error
+		return nil, nil, fmt.Errorf("failed to retrieve payer with PayerID %s: %v", payerID, err)
 	}
 
-	// if transactionType == "Debit" {
-	// Step 2: Fetch and validate the payment method
-	// paymentMethod, err := svc.GetPaymentMethodByPayerID(ctx, payerID)
-	paymentMethod, err := svc.GetPaymentMethodByPayerAndPaymentMethodID(ctx, payerID, paymentMethodID)
-	if err != nil {
-		return nil, fmt.Errorf("no valid payment method found for payer GetPaymentMethodByPayerID: %v", err)
-	}
-
-	if paymentMethod.Status != "active" {
-		return nil, errors.New("payment method is not active")
-	}
-	// }
-
-	fmt.Println("Reached Here!", "paymentDetail.AccountNumber -", paymentDetail.AccountNumber, "paymentDetail.CardNumber=", paymentDetail.CardNumber,
-		" paymentDetail.CVV=", paymentDetail.CVV, "paymentDetail.ExpiryDate=", paymentDetail.ExpiryDate)
-	fmt.Println("paymentMethod came from server", paymentMethod.CardNumber, paymentMethod.ExpiryDate, paymentMethod.MethodType, "paymentMethod.PaymentMethodID -", paymentMethod.PaymentMethodID)
-	// if transactionType == "Debit" {
-	errPaymentMethod := svc.ValidatePaymentDetails(paymentMethod, paymentDetail)
-	if errPaymentMethod != nil {
-		return nil, fmt.Errorf("no valid payment method found for payer ValidatePaymentDetails: %v", errPaymentMethod)
-	}
-	// }
-
-	// Step 3: Check if the payee exists
+	// Retrieve payee
 	var payee model.Payee
 	if err := svc.DB.First(&payee, "PayeeID = ?", payeeID).Error; err != nil {
-		return nil, fmt.Errorf("payee with PayeeID %s does not exist", payeeID)
+		// Log the error to the file
+		errorLogger.Printf("Failed to retrieve payee with PayeeID %s: %v\n", payeeID, err)
+		// Return nil for payee and a custom error
+		return nil, nil, fmt.Errorf("failed to retrieve payee with PayeeID %s: %v", payeeID, err)
 	}
 
-	// Step 4: Validate that payer and payee are not the same
-	if payerID == payeeID {
+	// Return payer and payee if no errors occurred
+	return &payer, &payee, nil
+}
+
+func (svc *TransactionService) InitializeTransaction(ctx context.Context, payerID, payeeID string, amount float64, transactionType, status string, reservedAmount float64, transaction_id, paymentMethodID string, paymentDetail model.PaymentDetails) (*model.Transaction, error) {
+
+	var payer *model.Payer
+	var payee *model.Payee
+	payer, payee, err := svc.getPayerAndPayee(payerID, payeeID)
+	if err != nil {
+		// Handle the error (already logged to file)
+		fmt.Println("Error:", err)
+		return nil, err
+	}
+	// Step 3: Validate that payer and payee are not the same
+	if payer.PayerID == payee.PayeeID {
 		return nil, errors.New("payer cannot pay themselves")
 	}
 
-	// Step 5: Validate the transaction payload
+	// Step 4: Fetch and validate the payment method
+
+	// Main code for calling the GetPaymentMethodByPayerAndPaymentMethodID
+	getPaymentMethod, err := svc.GetPaymentMethodByPayerAndPaymentMethodID(ctx, payer.PayerID, paymentMethodID, transactionType == "Refund") // true indicates it's a refund
+	if err != nil {
+		// Log the error and handle the refund case
+		errorLogger.Printf("Error retrieving payment method for refund for PayerID %s and PaymentMethodID %s: %v\n", payer.PayerID, paymentMethodID, err)
+		// Additional handling logic here, like returning the error to the caller or a custom response
+		return nil, fmt.Errorf("payment method GetPaymentMethodByPayerAndPaymentMethodID failed: %v", err)
+	}
+
+	// Pass 'true' for isRefund to skip the active status check
+	err = svc.ValidatePaymentDetails(getPaymentMethod, paymentDetail, false) // transactionType == "Refund")
+	if err != nil {
+		// Log error before returning
+		errorLogger.Printf("Payment method validation failed for PayerID %s, PaymentMethodID %s: %v\n", payerID, paymentMethodID, err)
+		return nil, fmt.Errorf("payment method validation failed: %v", err)
+	}
 	transactionID := utils.GenerateUniqueID()
+	// Step 5: Validate the transaction payload
+	// if transactionType == "Refund" {
+	// 	transactionID = transaction_id
+	// }
 	if err := validateTransactionPayload(transactionID, payerID, payeeID, amount, transactionType, paymentMethodID); err != nil {
 		return nil, fmt.Errorf("invalid transaction payload: %v", err)
 	}
-
-	// Step 6: Check for duplicate transaction
-	if err := svc.CheckDuplicateTransaction(transactionID); err != nil {
-		return nil, fmt.Errorf("duplicate transaction: %v", err)
+	if transactionType != "Refund" {
+		// Step 6: Check for duplicate transaction
+		if err := svc.CheckDuplicateTransaction(transactionID); err != nil {
+			return nil, fmt.Errorf("duplicate transaction: %v", err)
+		}
 	}
 
 	// Step 7: Create the transaction record
@@ -122,233 +134,159 @@ func (svc *TransactionService) InitializeTransaction(ctx context.Context, payerI
 		}
 	}()
 	if err := svc.DB.Create(transaction).Error; err != nil {
-		// svc.logAudit(transaction.TransactionID, "Create T", "Trasaction failed")
+		errorLogger.Printf("Failed Create Transaction : %v\n", err)
 		return nil, fmt.Errorf("failed to create transaction: %v", err)
 	}
 
-	if transactionType == "Debit" {
+	if transaction.TransactionType == "Debit" {
 		// Step 8: Check the payer's balance
 		if err := svc.CheckBalance(ctx, transaction); err != nil {
+			errorLogger.Printf("Balance check failed : %v\n", err)
 			return nil, fmt.Errorf("balance check failed: %v", err)
 		}
-	}
-
-	// // Step 9: Reserve the funds
-	// if err := svc.ReserveFunds(ctx, transaction); err != nil {
-	// 	return nil, fmt.Errorf("failed to reserve funds: %v", err)
-	// }
-
-	if transaction.TransactionType == "Debit" {
-		// 	// Skip reserving funds for refunds
-		// 	// You can directly proceed to reverse balances
 		// Step 9: Reserve the funds
 		if err := svc.ReserveFunds(ctx, transaction); err != nil {
+			errorLogger.Printf("Failed reserve funds : %v\n", err)
 			return nil, fmt.Errorf("failed to reserve funds: %v", err)
 		}
 	}
 
 	// Step 10: Process the payment
 	if err := svc.ProcessPayment(ctx, transaction); err != nil {
-
-		return nil, fmt.Errorf("payment processing failed: %v", err)
+		errorLogger.Printf("Process Payment failed : %v\n", err)
+		return nil, fmt.Errorf("Payment processing failed: %v", err)
 	}
 
 	// Step 11: Complete the transaction
 	if err := svc.CompleteTransaction(transaction.TransactionID, svc.DB); err != nil {
-
+		errorLogger.Printf("Failed to complete transaction : %v\n", err)
 		return nil, fmt.Errorf("failed to complete transaction: %v", err)
 	}
 
 	return transaction, nil
 }
+func (svc *TransactionService) ValidatePaymentDetails(paymentMethod *model.PaymentMethod, paymentDetail model.PaymentDetails, isRefund bool) error {
+	// If it's not a refund, we check if the payment method is active
+	if !isRefund && paymentMethod.Status != "active" {
+		// Log error before returning
+		errorLogger.Printf("Payment method with ID %s is not active. Payment method status: %s\n", paymentMethod.PaymentMethodID, paymentMethod.Status)
+		return errors.New("payment method is not active")
+	}
 
-func (svc *TransactionService) ValidatePaymentDetails(paymentMethod *model.PaymentMethod, paymentDetail model.PaymentDetails) error {
 	switch paymentMethod.MethodType {
 	case "card":
-
 		if paymentMethod.CardNumber != paymentDetail.CardNumber {
+			// Log error before returning
+			errorLogger.Printf("Card number mismatch for payment method ID %s. Provided: %s, Stored: %s\n", paymentMethod.PaymentMethodID, paymentDetail.CardNumber, paymentMethod.CardNumber)
 			return errors.New("payment method is not correct - card number")
 		}
-		// if paymentMethod.cvv != paymentDetail.PaymentDetails.CVV {
-		// 	return nil, errors.New("payment method is not correct cvv")
-		// }
 		if paymentMethod.ExpiryDate != paymentDetail.ExpiryDate {
+			// Log error before returning
+			errorLogger.Printf("Expiry date mismatch for payment method ID %s. Provided: %s, Stored: %s\n", paymentMethod.PaymentMethodID, paymentDetail.ExpiryDate, paymentMethod.ExpiryDate)
 			return errors.New("payment method is not correct - expiry date")
 		}
 	case "bank_transfer":
-		// Validate AccountNumber for bank transfer
 		if paymentMethod.AccountNumber != paymentDetail.AccountNumber {
-			fmt.Println(paymentMethod.AccountNumber, "paymentMethod.AccountNumber", paymentDetail.AccountNumber, "paymentDetail.AccountNumber")
+			// Log error before returning
+			errorLogger.Printf("Account number mismatch for payment method ID %s. Provided: %s, Stored: %s\n", paymentMethod.PaymentMethodID, paymentDetail.AccountNumber, paymentMethod.AccountNumber)
 			return errors.New("payment method is bank_transfer, please provide correct - account number")
 		}
-
 	case "upi":
-		// Validate UPI if required
 		if paymentMethod.Details != paymentDetail.UPIID {
+			// Log error before returning
+			errorLogger.Printf("UPI ID mismatch for payment method ID %s. Provided: %s, Stored: %s\n", paymentMethod.PaymentMethodID, paymentDetail.UPIID, paymentMethod.Details)
 			return errors.New("payment method is not correct - upi id")
 		}
-
 	case "wallet":
-		// Validate Wallet method if required
 		if paymentMethod.Details != paymentDetail.Wallet {
+			// Log error before returning
+			errorLogger.Printf("Wallet mismatch for payment method ID %s. Provided: %s, Stored: %s\n", paymentMethod.PaymentMethodID, paymentDetail.Wallet, paymentMethod.Details)
 			return errors.New("payment method is not correct - wallet")
 		}
-
 	case "cheque":
-		// Validate for cheque method if required
 		if paymentMethod.Details != paymentDetail.Cheque {
+			// Log error before returning
+			errorLogger.Printf("Cheque mismatch for payment method ID %s. Provided: %s, Stored: %s\n", paymentMethod.PaymentMethodID, paymentDetail.Cheque, paymentMethod.Details)
 			return errors.New("payment method is not correct - cheque")
 		}
-
 	default:
+		// Log error for invalid payment method
+		errorLogger.Printf("Invalid payment method type for payment method ID %s: %s\n", paymentMethod.PaymentMethodID, paymentMethod.MethodType)
 		return errors.New("invalid payment method type")
-
-	}
-
-	return nil
-}
-func (svc *TransactionService) UpdatePayerBalance(ctx context.Context, payerID string, amount float64) error {
-	// Validate the amount to prevent invalid updates
-	if amount == 0 {
-		return errors.New("amount must not be zero")
-	}
-
-	// Begin a database transaction
-	return svc.DB.Transaction(func(tx *gorm.DB) error {
-		// Fetch the payer record
-		var payer model.Payer
-		if err := tx.First(&payer, "payer_id = ?", payerID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("payer with ID %s not found", payerID)
-			}
-			return fmt.Errorf("error fetching payer: %v", err)
-		}
-
-		// Update the payer's balance
-		newBalance := payer.Balance + amount
-		if newBalance < 0 {
-			return errors.New("insufficient funds for balance update")
-		}
-
-		payer.Balance = newBalance
-
-		// Save the updated balance
-		if err := tx.Save(&payer).Error; err != nil {
-			return fmt.Errorf("failed to update payer's balance: %v", err)
-		}
-
-		// Optionally log the balance update
-		// logEntry := model.AuditLog{
-		// 	LogID:      utils.GenerateUniqueID(),
-		// 	PayerID:    payerID,
-		// 	Amount:     amount,
-		// 	NewBalance: newBalance,
-		// 	CreatedAt:  time.Now(),
-		// }
-		// if err := tx.Create(&logEntry).Error; err != nil {
-		// 	return fmt.Errorf("failed to log balance update: %v", err)
-		// }
-
-		return nil
-	})
-}
-
-func (svc *TransactionService) DepositToPayer(ctx context.Context, payerID string, amount float64) error {
-	// Validate the deposit amount
-	if amount <= 0 {
-		return errors.New("deposit amount must be greater than zero")
-	}
-
-	// Fetch the payer record
-	var payer model.Payer
-	if err := svc.DB.First(&payer, "payer_id = ?", payerID).Error; err != nil {
-		return fmt.Errorf("payer with ID %s not found: %v", payerID, err)
-	}
-
-	// Create a deposit transaction
-	depositTransaction := &model.Transaction{
-		TransactionID:   utils.GenerateUniqueID(),
-		PayerID:         payerID,
-		PayeeID:         "", // No payee for deposit
-		Amount:          amount,
-		TransactionType: "Deposit",
-		Status:          "Completed",
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-	}
-
-	// Save the deposit transaction
-	if err := svc.DB.Create(depositTransaction).Error; err != nil {
-		return fmt.Errorf("failed to create deposit transaction: %v", err)
-	}
-
-	// Update the payer's balance
-	payer.Balance += amount
-	if err := svc.DB.Save(&payer).Error; err != nil {
-		return fmt.Errorf("failed to update payer's balance: %v", err)
 	}
 
 	return nil
 }
 
-//	func (svc *TransactionService) GetPaymentMethodByPayerID(ctx context.Context, payerID string) (*model.PaymentMethod, error) {
-//		var paymentMethod model.PaymentMethod
-//		err := svc.DB.Where("payer_id = ? AND status = ?", payerID, "active").First(&paymentMethod).Error
-//		if err != nil {
-//			return nil, fmt.Errorf("no valid payment method found for payer GetPaymentMethodByPayerID  inside method: %v", err)
-//		}
-//		fmt.Println("payment method - 1 : ", &paymentMethod)
-//		return &paymentMethod, nil
-//	}
-func (svc *TransactionService) GetPaymentMethodByPayerAndPaymentMethodID(ctx context.Context, payerID string, paymentMethodID string) (*model.PaymentMethod, error) {
+func (svc *TransactionService) GetPaymentMethodByPayerAndPaymentMethodID(ctx context.Context, payerID, paymentMethodID string, isRefund bool) (*model.PaymentMethod, error) {
 	var paymentMethod model.PaymentMethod
-	err := svc.DB.Where("payer_id = ? AND payment_method_id = ? AND status = ?", payerID, paymentMethodID, "active").First(&paymentMethod).Error
-	if err != nil {
-		return nil, fmt.Errorf("no valid payment method found for payer %s with payment method %s: %v", payerID, paymentMethodID, err)
+	var err error
+
+	// If it's a refund, skip the "active" status check
+	if isRefund {
+		fmt.Println("Camer here at refund")
+		// Retrieve payment method for a refund (ignoring active status check)
+		if err = svc.DB.First(&paymentMethod, "payer_id = ? AND payment_method_id = ?", payerID, paymentMethodID).Error; err != nil {
+			// Log the error and return a custom error message
+			errorLogger.Printf("Failed to retrieve payment method for PayerID %s, PaymentMethodID %s (Refund Case): %v\n", payerID, paymentMethodID, err)
+			return nil, fmt.Errorf("failed to retrieve payment method details for PayerID %s, PaymentMethodID %s: %v", payerID, paymentMethodID, err)
+		}
+	} else {
+		fmt.Println("Camer here at other")
+		// Retrieve payment method with active status check
+		err = svc.DB.Where("payer_id = ? AND payment_method_id = ? AND status = ?", payerID, paymentMethodID, "active").First(&paymentMethod).Error
+		if err != nil {
+			// Log the error and return a custom error message
+			errorLogger.Printf("Failed to retrieve active payment method for PayerID %s, PaymentMethodID %s: %v\n", payerID, paymentMethodID, err)
+			return nil, fmt.Errorf("no valid payment method found for payer %s with payment method %s: %v", payerID, paymentMethodID, err)
+		}
 	}
-	fmt.Println("payment method - 1 : ", &paymentMethod)
+
+	// Return the payment method details if successful
+	fmt.Println("payment method: ", &paymentMethod)
 	return &paymentMethod, nil
 }
 
-func validateTransactionPayload(transaction_id string, payerID string, payeeID string, amount float64, transactionType, paymentMethodID string) error {
-	// if transaction_id == "" || payerID == "" || payeeID == "" ||
-	// 	amount <= 0 || transactionType == "" || paymentMethodID == "" {
-	// 	return errors.New("missing required fields or invalid data")
-	// }
+func validateTransactionPayload(transactionID, payerID, payeeID string, amount float64, transactionType, paymentMethodID string) error {
+	transactionType = strings.ToLower(transactionType)
 
-	if transactionType != "Debit" && transactionType != "Credit" && transactionType != "Refund" && transactionType != "debit" && transactionType != "credit" && transactionType != "refund" {
+	validTransactionTypes := map[string]bool{
+		"debit":  true,
+		"credit": true,
+		"refund": true,
+	}
+
+	if !validTransactionTypes[transactionType] {
+		errorLogger.Printf("Invalid transaction type: %s\n", transactionType)
 		return errors.New("invalid transaction type")
 	}
-	if transactionType == "Debit" && (transaction_id == "" || payerID == "" || payeeID == "" || amount <= 0 || transactionType == "") {
-		if paymentMethodID == "" {
-			return errors.New("missing required fields or invalid data")
-		}
+
+	// Validate required fields for "Debit" transactions
+	if (transactionType == "debit") && (transactionID == "" || payerID == "" || payeeID == "" || amount <= 0 || paymentMethodID == "") {
+		errorLogger.Printf("Invalid input type: %s\n %s\n %s\n %s\n %s\n %s\n%s\n", transactionType, transactionID, payerID, payeeID, amount, paymentMethodID)
+		return errors.New("missing required fields or invalid data for Debit transaction")
 	}
+
 	return nil
 }
 
 func (svc *TransactionService) CheckDuplicateTransaction(transactionID string) error {
 	var existingTransaction model.Transaction
 	if err := svc.DB.First(&existingTransaction, "transaction_id = ?", transactionID).Error; err == nil {
+		errorLogger.Printf("Duplicate transaction ID check failed : %v\n", err)
 		return errors.New("duplicate transaction ID")
 	}
 	return nil
 }
-func (svc *TransactionService) VerifyPaymentMethod(ctx context.Context, transaction *model.Transaction) error {
-	paymentMethod, err := svc.PaymentMethodService.ValidatePaymentMethod(transaction.PaymentMethodID)
-	if err != nil || paymentMethod.Status != "active" {
-		_ = svc.UpdateTransactionStatus(ctx, transaction.TransactionID, "Failed")
-		return errors.New("invalid or inactive payment method")
-	}
-	return nil
-}
+
 func (svc *TransactionService) CheckBalance(ctx context.Context, transaction *model.Transaction) error {
 	var payer model.Payer
 	if err := svc.DB.First(&payer, "PayerID = ?", transaction.PayerID).Error; err != nil {
-		// svc.logAudit(transaction.TransactionID, "Check balance", "Trasaction failed")
+		errorLogger.Printf("Payer not found: %s\n", transaction.PayerID)
 		return errors.New("payer not found")
 	}
 	if payer.Balance < transaction.Amount {
+		errorLogger.Printf("Payer Balance is less then Transaction amount : %s\n %s\n", payer.Balance, transaction.Amount)
 		_ = svc.UpdateTransactionStatus(ctx, transaction.TransactionID, "Failed")
 		return errors.New("insufficient funds")
 	}
@@ -418,13 +356,6 @@ func (svc *TransactionService) ProcessPayment(ctx context.Context, transaction *
 				return errors.New("payee not found")
 			}
 
-			// // Check for sufficient balance
-			// if payer.Balance < transaction.Amount {
-			// 	return errors.New("insufficient funds")
-			// }
-
-			// Update balances
-			// payer.Balance -= transaction.Amount
 			payee.Balance += transaction.Amount
 
 			// Save updated records
@@ -453,13 +384,6 @@ func (svc *TransactionService) ProcessPayment(ctx context.Context, transaction *
 			if err := tx.First(&originalTransaction, "transaction_id = ?", transaction.TransactionID).Error; err != nil {
 				return errors.New("original transaction not found")
 			}
-
-			fmt.Println("originalTransaction Status ", originalTransaction.Status, " - for - ", originalTransaction.TransactionID, "- Transaction type - ", originalTransaction.TransactionType)
-			// Ensure the original transaction was completed
-			// if originalTransaction.Status != "Completed" {
-			// 	return errors.New("refund not allowed for incomplete transactions")
-			// }
-
 			// Fetch payer and payee from the original transaction
 			var payer model.Payer
 			var payee model.Payee
