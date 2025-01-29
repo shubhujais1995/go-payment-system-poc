@@ -52,24 +52,26 @@ func (svc *TransactionService) InitializeTransaction(ctx context.Context, payerI
 	}
 
 	// if transactionType == "Debit" {
-		// Step 2: Fetch and validate the payment method
-		paymentMethod, err := svc.GetPaymentMethodByPayerID(ctx, payerID)
-		if err != nil {
-			return nil, fmt.Errorf("no valid payment method found for payer: %v", err)
-		}
+	// Step 2: Fetch and validate the payment method
+	// paymentMethod, err := svc.GetPaymentMethodByPayerID(ctx, payerID)
+	paymentMethod, err := svc.GetPaymentMethodByPayerAndPaymentMethodID(ctx, payerID, paymentMethodID)
+	if err != nil {
+		return nil, fmt.Errorf("no valid payment method found for payer GetPaymentMethodByPayerID: %v", err)
+	}
 
-		if paymentMethod.Status != "active" {
-			return nil, errors.New("payment method is not active")
-		}
-		// }
+	if paymentMethod.Status != "active" {
+		return nil, errors.New("payment method is not active")
+	}
+	// }
 
-		// fmt.Println("Reached Here!", paymentDetail.CardNumber, paymentDetail.CVV, paymentDetail.ExpiryDate)
-		// fmt.Println("paymentMethod.CardNumber", paymentMethod.CardNumber, paymentMethod.ExpiryDate, paymentMethod.MethodType, paymentMethod.PaymentMethodID)
-		// if transactionType == "Debit" {
-		errPaymentMethod := svc.ValidatePaymentDetails(paymentMethod, paymentDetail)
-		if errPaymentMethod != nil {
-			return nil, fmt.Errorf("no valid payment method found for payer: %v", errPaymentMethod)
-		}
+	fmt.Println("Reached Here!", "paymentDetail.AccountNumber -", paymentDetail.AccountNumber, "paymentDetail.CardNumber=", paymentDetail.CardNumber,
+		" paymentDetail.CVV=", paymentDetail.CVV, "paymentDetail.ExpiryDate=", paymentDetail.ExpiryDate)
+	fmt.Println("paymentMethod came from server", paymentMethod.CardNumber, paymentMethod.ExpiryDate, paymentMethod.MethodType, "paymentMethod.PaymentMethodID -", paymentMethod.PaymentMethodID)
+	// if transactionType == "Debit" {
+	errPaymentMethod := svc.ValidatePaymentDetails(paymentMethod, paymentDetail)
+	if errPaymentMethod != nil {
+		return nil, fmt.Errorf("no valid payment method found for payer ValidatePaymentDetails: %v", errPaymentMethod)
+	}
 	// }
 
 	// Step 3: Check if the payee exists
@@ -175,8 +177,9 @@ func (svc *TransactionService) ValidatePaymentDetails(paymentMethod *model.Payme
 		}
 	case "bank_transfer":
 		// Validate AccountNumber for bank transfer
-		if paymentMethod.AccountNumber != paymentDetail.CardNumber {
-			return errors.New("payment method is not correct - account number")
+		if paymentMethod.AccountNumber != paymentDetail.AccountNumber {
+			fmt.Println(paymentMethod.AccountNumber, "paymentMethod.AccountNumber", paymentDetail.AccountNumber, "paymentDetail.AccountNumber")
+			return errors.New("payment method is bank_transfer, please provide correct - account number")
 		}
 
 	case "upi":
@@ -288,11 +291,20 @@ func (svc *TransactionService) DepositToPayer(ctx context.Context, payerID strin
 	return nil
 }
 
-func (svc *TransactionService) GetPaymentMethodByPayerID(ctx context.Context, payerID string) (*model.PaymentMethod, error) {
+//	func (svc *TransactionService) GetPaymentMethodByPayerID(ctx context.Context, payerID string) (*model.PaymentMethod, error) {
+//		var paymentMethod model.PaymentMethod
+//		err := svc.DB.Where("payer_id = ? AND status = ?", payerID, "active").First(&paymentMethod).Error
+//		if err != nil {
+//			return nil, fmt.Errorf("no valid payment method found for payer GetPaymentMethodByPayerID  inside method: %v", err)
+//		}
+//		fmt.Println("payment method - 1 : ", &paymentMethod)
+//		return &paymentMethod, nil
+//	}
+func (svc *TransactionService) GetPaymentMethodByPayerAndPaymentMethodID(ctx context.Context, payerID string, paymentMethodID string) (*model.PaymentMethod, error) {
 	var paymentMethod model.PaymentMethod
-	err := svc.DB.Where("payer_id = ? AND status = ?", payerID, "active").First(&paymentMethod).Error
+	err := svc.DB.Where("payer_id = ? AND payment_method_id = ? AND status = ?", payerID, paymentMethodID, "active").First(&paymentMethod).Error
 	if err != nil {
-		return nil, fmt.Errorf("no valid payment method found for payer: %v", err)
+		return nil, fmt.Errorf("no valid payment method found for payer %s with payment method %s: %v", payerID, paymentMethodID, err)
 	}
 	fmt.Println("payment method - 1 : ", &paymentMethod)
 	return &paymentMethod, nil

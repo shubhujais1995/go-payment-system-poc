@@ -77,8 +77,10 @@ func (uc *UserController) Login(ctx iris.Context) {
 	// Respond with user data and the generated token
 	ctx.StatusCode(http.StatusOK)
 	ctx.JSON(map[string]interface{}{
-		"user":  user,
-		"token": token,
+		"user_id":    user.UserID,
+		"first_name": user.FirstName,
+		"last_name":  user.LastName,
+		"token":      token,
 	})
 }
 
@@ -101,8 +103,8 @@ func (uc *UserController) UpdateUser(ctx iris.Context) {
 		Email     string `json:"email"`
 		FirstName string `json:"first_name"`
 		LastName  string `json:"last_name"`
-		isPayee   bool   `json:"isPayee"`
-		isPayer   bool   `json:"isPayer"`
+		IsPayee   bool   `json:"isPayee"`
+		IsPayer   bool   `json:"isPayer"`
 	}
 
 	// Decode the incoming request
@@ -113,7 +115,7 @@ func (uc *UserController) UpdateUser(ctx iris.Context) {
 	}
 
 	// Call the service to update the user
-	err := uc.UserService.UpdateUser(ctx, userID, req.Email, req.FirstName, req.LastName, req.isPayee, req.isPayer)
+	err := uc.UserService.UpdateUser(ctx, userID, req.Email, req.FirstName, req.LastName, req.IsPayee, req.IsPayer)
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
 		ctx.JSON(map[string]string{"error": err.Error()})

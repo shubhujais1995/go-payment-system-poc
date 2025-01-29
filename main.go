@@ -30,6 +30,8 @@ func main() {
 	// Create an Iris application instance
 	app := iris.New()
 
+	app.HandleDir("/", iris.Dir("."))
+
 	// Register routes for user, transaction, and payment method
 	routes.RegisterAuthRoutes(app, userService)
 	routes.RegisterPaymentRoutes(app, paymentMethodService) // Add this to register payment method routes
