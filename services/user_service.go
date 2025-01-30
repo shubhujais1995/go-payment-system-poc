@@ -10,13 +10,20 @@ import (
 	"gorm.io/gorm"
 )
 
+type DBInterface interface {
+	Where(query interface{}, args ...interface{}) *gorm.DB
+	First(out interface{}, where ...interface{}) *gorm.DB
+	Create(value interface{}) *gorm.DB
+	Save(value interface{}) *gorm.DB
+}
+
 // UserService provides methods for user-related operations.
 type UserService struct {
-	DB *gorm.DB
+	DB DBInterface
 }
 
 // NewUserService creates a new instance of UserService.
-func NewUserService(db *gorm.DB) *UserService {
+func NewUserService(db DBInterface) *UserService {
 	return &UserService{DB: db}
 }
 
