@@ -1,0 +1,40 @@
+ERROR: 2025/01/30 14:06:13 transaction_service.go:155: Failed to retrieve payment method for payerID 732b34ad-1c0b-4d55-be17-73a0a1ab2ffb with paymentMethodID 4f0f48c8-f22a-477e-95ef-427f31105629: record not found
+ERROR: 2025/01/30 14:06:51 transaction_service.go:127: Failed to retrieve payee with PayeeID 70c227bf-937b-432e-8721-0823d29aaa2e2: record not found
+ERROR: 2025/01/30 14:07:10 transaction_service.go:181: Insufficient balance for payer 732b34ad-1c0b-4d55-be17-73a0a1ab2ffb. Available: 0.00, Required: 50000000.00
+ERROR: 2025/01/30 14:07:21 transaction_service.go:181: Insufficient balance for payer 732b34ad-1c0b-4d55-be17-73a0a1ab2ffb. Available: 0.00, Required: 5000.00
+ERROR: 2025/01/30 14:07:32 transaction_service.go:181: Insufficient balance for payer 732b34ad-1c0b-4d55-be17-73a0a1ab2ffb. Available: 0.00, Required: 500.00
+ERROR: 2025/01/30 14:07:37 transaction_service.go:181: Insufficient balance for payer 732b34ad-1c0b-4d55-be17-73a0a1ab2ffb. Available: 0.00, Required: 50.00
+ERROR: 2025/01/30 14:11:40 transaction_service.go:261: Invalid transaction type: creditd
+ERROR: 2025/01/30 14:11:48 transaction_service.go:261: Invalid transaction type: creditd
+ERROR: 2025/01/30 14:12:09 transaction_service.go:261: Invalid transaction type: 
+ERROR: 2025/01/30 14:12:53 transaction_service.go:132: Failed to retrieve payee with PayeeID : record not found
+ERROR: 2025/01/30 14:13:26 transaction_service.go:160: Failed to retrieve payment method for payerID 732b34ad-1c0b-4d55-be17-73a0a1ab2ffb with paymentMethodID : record not found
+ERROR: 2025/01/30 14:13:51 transaction_service.go:267: Invalid input type: debit
+ 
+ 732b34ad-1c0b-4d55-be17-73a0a1ab2ffb
+ 70c227bf-937b-432e-8721-0823d29aaa2e
+ %!s(float64=-90)
+ 4f0f48c8-f22a-477e-95ef-427f31105628
+%!s(MISSING)
+ERROR: 2025/01/30 14:18:31 transaction_service.go:268: Invalid transaction amount: -90.00 for type: debit
+ERROR: 2025/01/30 14:22:13 transaction_service.go:169: Payment details validation failed: card number or expiry date mismatch
+ERROR: 2025/01/30 14:22:38 transaction_service.go:282: Refund amount mismatch: original=90.00, requested=9.00
+ERROR: 2025/01/30 14:22:48 transaction_service.go:169: Payment details validation failed: card number or expiry date mismatch
+ERROR: 2025/01/30 14:22:56 transaction_service.go:282: Refund amount mismatch: original=90.00, requested=10.00
+ERROR: 2025/01/30 14:23:01 transaction_service.go:282: Refund amount mismatch: original=90.00, requested=10.00
+ERROR: 2025/01/30 14:23:53 transaction_service.go:282: Refund amount mismatch: original=90.00, requested=10.00
+ERROR: 2025/01/30 14:23:59 transaction_service.go:282: Refund amount mismatch: original=90.00, requested=10.00
+ERROR: 2025/01/30 14:24:33 transaction_service.go:282: Refund amount mismatch: original=90.00, requested=10.00
+ERROR: 2025/01/30 14:24:43 transaction_service.go:282: Refund amount mismatch: original=90.00, requested=10.00
+ERROR: 2025/01/30 14:33:09 transaction_service.go:282: Refund amount mismatch: original=90.00, requested=100.00
+ERROR: 2025/01/30 14:34:05 transaction_service.go:282: Refund amount mismatch: original=90.00, requested=100.00
+ERROR: 2025/01/30 14:59:03 transaction_service.go:285: Refund amount mismatch: original=190.00, requested=90.00
+ERROR: 2025/01/30 15:00:46 transaction_service.go:283: Refund amount mismatch: original=190.00, requested=191.00
+ERROR: 2025/01/30 15:01:32 transaction_service.go:283: Refund amount mismatch: original=190.00, requested=191.00
+ERROR: 2025/01/30 15:04:42 transaction_service.go:281: Refund amount mismatch: original=191.00, requested=192.00
+ERROR: 2025/01/30 15:16:37 transaction_service.go:290: Refund amount mismatch: original=191.00, requested=192.00
+ERROR: 2025/01/30 15:18:30 transaction_service.go:132: Failed to retrieve payee with PayeeID 70c227bf-937b-432e-8721-0823d29aaa2: record not found
+ERROR: 2025/01/30 15:23:20 transaction_service.go:132: Failed to retrieve payee with PayeeID 70c227bf-937b-432e-8721-0823d29aaa2: record not found
+ERROR: 2025/01/30 15:24:16 transaction_service.go:132: Failed to retrieve payee with PayeeID 70c227bf-937b-432e-8721-0823d29aaa2: record not found
+ERROR: 2025/01/30 15:24:33 transaction_service.go:296: Refund amount mismatch: original=191.00, requested=121.00
+ERROR: 2025/01/30 15:25:11 transaction_service.go:296: Refund amount mismatch: original=191.00, requested=121.00

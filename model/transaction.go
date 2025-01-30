@@ -35,7 +35,7 @@ type PaymentDetails struct {
 }
 
 type ProcessPaymentInput struct {
-	TransactionID   string         `json:"transactionId" validate:"required"`
+	TransactionID   string         `json:"transaction_id" validate:"required"`
 	PayerID         string         `json:"payer_id" validate:"required"`
 	PayeeID         string         `json:"payee_id" validate:"required"`
 	Status          string         `json:"status" validate:"required"`
