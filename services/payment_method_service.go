@@ -2,9 +2,11 @@ package services
 
 import (
 	"errors"
+	"time"
+
+	"poc/initializer"
 	"poc/model"
 	"poc/utils"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -17,13 +19,12 @@ func NewPaymentMethodService(db *gorm.DB) *PaymentMethodService {
 	return &PaymentMethodService{DB: db}
 }
 
-func (s *PaymentMethodService) CreatePaymentMethod(paymentMethod model.PaymentMethod) error {
-
+func CreatePaymentMethod(db *gorm.DB, paymentMethod model.PaymentMethod) error {
 	if paymentMethod.PaymentMethodID == "" {
 		paymentMethod.PaymentMethodID = utils.GenerateUniqueID()
 	}
 
-	exists, err := s.CheckPaymentMethodExists(paymentMethod.PayerID, paymentMethod.MethodType, paymentMethod.CardNumber, paymentMethod.AccountNumber)
+	exists, err := checkPaymentMethodExists(paymentMethod.PayerID, paymentMethod.MethodType, paymentMethod.CardNumber, paymentMethod.AccountNumber)
 	if err != nil {
 		return err
 	}
@@ -76,25 +77,26 @@ func (s *PaymentMethodService) CreatePaymentMethod(paymentMethod model.PaymentMe
 
 	paymentMethod.CreatedAt = time.Now()
 	paymentMethod.UpdatedAt = time.Now()
-	return s.DB.Create(&paymentMethod).Error
+	return db.Create(&paymentMethod).Error
 }
 
-func (s *PaymentMethodService) CheckPaymentMethodExists(payerID, methodType, cardNumber, accountNumber string) (bool, error) {
+func checkPaymentMethodExists(payerID, methodType, cardNumber, accountNumber string) (bool, error) {
+	db := initializer.GetDB()
 	var existingPaymentMethod model.PaymentMethod
 	var err error
 
 	if methodType == "card" {
-		err = s.DB.Where("payer_id = ? AND method_type = ? AND card_number = ?", payerID, methodType, cardNumber).First(&existingPaymentMethod).Error
+		err = db.Where("payer_id = ? AND method_type = ? AND card_number = ?", payerID, methodType, cardNumber).First(&existingPaymentMethod).Error
 		if err == nil {
 			return true, nil
 		}
 	} else if methodType == "bank_transfer" {
-		err = s.DB.Where("payer_id = ? AND method_type = ? AND account_number = ?", payerID, methodType, accountNumber).First(&existingPaymentMethod).Error
+		err = db.Where("payer_id = ? AND method_type = ? AND account_number = ?", payerID, methodType, accountNumber).First(&existingPaymentMethod).Error
 		if err == nil {
 			return true, nil
 		}
 	} else {
-		err = s.DB.Where("payer_id = ? AND method_type = ? AND (card_number = ? OR account_number = ?)", payerID, methodType, cardNumber, accountNumber).First(&existingPaymentMethod).Error
+		err = db.Where("payer_id = ? AND method_type = ? AND (card_number = ? OR account_number = ?)", payerID, methodType, cardNumber, accountNumber).First(&existingPaymentMethod).Error
 		if err == nil {
 			return true, nil
 		}
@@ -107,37 +109,41 @@ func (s *PaymentMethodService) CheckPaymentMethodExists(payerID, methodType, car
 	return false, err
 }
 
-func (s *PaymentMethodService) GetPaymentMethods(payerID string) ([]model.PaymentMethod, error) {
+func GetPaymentMethods(payerID string) ([]model.PaymentMethod, error) {
+	db := initializer.GetDB()
 	var paymentMethods []model.PaymentMethod
-	err := s.DB.Where("payer_id = ?", payerID).Find(&paymentMethods).Error
+	err := db.Where("payer_id = ?", payerID).Find(&paymentMethods).Error
 	if err != nil {
 		return nil, err
 	}
 	return paymentMethods, nil
 }
-func (s *PaymentMethodService) UpdatePaymentMethod(paymentMethodID string, updates map[string]interface{}) error {
-	return s.DB.Model(&model.PaymentMethod{}).Where("payment_method_id = ?", paymentMethodID).Updates(updates).Error
+func UpdatePaymentMethod(paymentMethodID string, updates map[string]interface{}) error {
+	db := initializer.GetDB()
+	return db.Model(&model.PaymentMethod{}).Where("payment_method_id = ?", paymentMethodID).Updates(updates).Error
 }
 
-func (s *PaymentMethodService) ValidatePaymentMethod(paymentMethodID string) (*model.PaymentMethod, error) {
+func ValidatePaymentMethod(paymentMethodID string) (*model.PaymentMethod, error) {
+	db := initializer.GetDB()
 	var paymentMethod model.PaymentMethod
-	err := s.DB.Where("payment_method_id = ?", paymentMethodID).First(&paymentMethod).Error
+	err := db.Where("payment_method_id = ?", paymentMethodID).First(&paymentMethod).Error
 	if err != nil {
 		return nil, err
 	}
 	return &paymentMethod, nil
 }
 
-func (s *PaymentMethodService) GetPaymentMethod(paymentMethodID string) (*model.PaymentMethod, error) {
+func GetPaymentMethod(paymentMethodID string) (*model.PaymentMethod, error) {
+	db := initializer.GetDB()
 	var paymentMethod model.PaymentMethod
-	err := s.DB.Where("payment_method_id = ?", paymentMethodID).First(&paymentMethod).Error
+	err := db.Where("payment_method_id = ?", paymentMethodID).First(&paymentMethod).Error
 	if err != nil {
 		return nil, err
 	}
 	return &paymentMethod, nil
 }
 
-func (s *PaymentMethodService) ValidatePaymentDetails(paymentMethod *model.PaymentMethod, paymentDetail model.PaymentDetails) error {
+func ValidatePaymentDetails(paymentMethod *model.PaymentMethod, paymentDetail model.PaymentDetails) error {
 	if paymentMethod == nil {
 		return errors.New("payment method is nil")
 	}

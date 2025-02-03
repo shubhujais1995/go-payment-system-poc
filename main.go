@@ -7,7 +7,6 @@ import (
 
 	"poc/initializer"
 	"poc/routes"
-	"poc/services"
 
 	"github.com/kataras/iris/v12"
 )
@@ -17,15 +16,10 @@ func main() {
 	initializer.LoadConfig()
 
 	// Initialize the GORM client (Spanner)
-	db, err := initializer.InitializeGORMSpannerClient()
+	_, err := initializer.InitializeGORMSpannerClient()
 	if err != nil {
 		log.Fatalf("Failed to initialize GORM Spanner client: %v", err)
 	}
-
-	// Set up services (user service, transaction service, payment method service, etc.)
-	userService := services.NewUserService(db)
-	paymentMethodService := services.NewPaymentMethodService(db)
-	transactionService := services.NewTransactionService(db, paymentMethodService)
 
 	// Create an Iris application instance
 	app := iris.New()
@@ -33,9 +27,9 @@ func main() {
 	app.HandleDir("/", iris.Dir("."))
 
 	// Register routes for user, transaction, and payment method
-	routes.RegisterAuthRoutes(app, userService)
-	routes.RegisterPaymentRoutes(app, paymentMethodService) // Add this to register payment method routes
-	routes.RegisterTransactionRoutes(app, transactionService)
+	routes.RegisterAuthRoutes(app)
+	routes.RegisterPaymentRoutes(app) // Add this to register payment method routes
+	routes.RegisterTransactionRoutes(app)
 
 	// Define the server port (default to 8080)
 	port := os.Getenv("PORT")

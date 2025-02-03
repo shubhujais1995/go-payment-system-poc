@@ -17,6 +17,9 @@ func HashPassword(password string) (string, error) {
 	return string(bytes), nil
 }
 
+// HashPasswordWrapper is a wrapper function for HashPassword.
+var HashPasswordWrapper = HashPassword
+
 func CheckPasswordHash(password, hash string) bool {
 	// Compare the provided password with the hash stored in the database
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))

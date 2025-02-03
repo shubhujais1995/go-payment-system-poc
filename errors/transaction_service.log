@@ -38,3 +38,13 @@ ERROR: 2025/01/30 15:23:20 transaction_service.go:132: Failed to retrieve payee 
 ERROR: 2025/01/30 15:24:16 transaction_service.go:132: Failed to retrieve payee with PayeeID 70c227bf-937b-432e-8721-0823d29aaa2: record not found
 ERROR: 2025/01/30 15:24:33 transaction_service.go:296: Refund amount mismatch: original=191.00, requested=121.00
 ERROR: 2025/01/30 15:25:11 transaction_service.go:296: Refund amount mismatch: original=191.00, requested=121.00
+ERROR: 2025/01/30 16:57:41 transaction_service.go:123: Failed to retrieve payer with PayerID a1c6e5df-7a56-4b11-afa7-63a890300971: record not found
+ERROR: 2025/01/30 22:29:08 transaction_service.go:125: Failed to retrieve payer with PayerID a1c6e5df-7a56-4b11-afa7-63a890300971: record not found
+ERROR: 2025/01/30 22:32:05 transaction_service.go:125: Failed to retrieve payer with PayerID a1c6e5df-7a56-4b11-afa7-63a890300971: record not found
+ERROR: 2025/01/30 22:43:54 transaction_service.go:163: Failed to retrieve payment method for payerID 5af8ffac-e8fa-44d6-90c7-c4143434ea5e with paymentMethodID 4f0f48c8-f22a-477e-95ef-427f31105628: record not found
+ERROR: 2025/01/30 22:45:38 transaction_service.go:163: Failed to retrieve payment method for payerID 5af8ffac-e8fa-44d6-90c7-c4143434ea5e with paymentMethodID 4f0f48c8-f22a-477e-95ef-427f31105628: record not found
+ERROR: 2025/01/30 22:51:14 transaction_service.go:172: Payment details validation failed: card number or expiry date mismatch
+ERROR: 2025/01/30 22:52:08 transaction_service.go:172: Payment details validation failed: card number or expiry date mismatch
+ERROR: 2025/01/31 16:43:39 transaction_service.go:162: Failed to retrieve payment method for payerID 5af8ffac-e8fa-44d6-90c7-c4143434ea5e with paymentMethodID 1780ea02-5281-44a0-8ed2-732297a03747: record not found
+ERROR: 2025/01/31 16:46:00 transaction_service.go:162: Failed to retrieve payment method for payerID 5af8ffac-e8fa-44d6-90c7-c4143434ea5e with paymentMethodID 4f0f48c8-f22a-477e-95ef-427f31105628: record not found
+ERROR: 2025/01/31 16:46:15 transaction_service.go:298: Refund amount mismatch: original=200.00, requested=191.00

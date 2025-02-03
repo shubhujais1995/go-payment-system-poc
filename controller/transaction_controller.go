@@ -2,17 +2,19 @@ package controller
 
 import (
 	"fmt"
+	"poc/initializer"
 	"poc/model"
 	"poc/services"
 
 	"github.com/kataras/iris/v12"
 )
 
-type TransactionHandler struct {
-	svc *services.TransactionService
+type TransactionService interface {
+	InitializeTransaction(ctx iris.Context, payerId, payeeId string, amount float64, transactionType, status string, reservedAmount float64, transactionId, paymentMethodId string, paymentDetails model.PaymentDetails) (*model.Transaction, error)
+	// ListTransactions(ctx context.Context, userID string) ([]model.Transaction, error)
 }
 
-func CreateTransactionHandler(svc *services.TransactionService, ctx iris.Context) {
+func CreateTransactionHandler(ctx iris.Context) {
 	payerId := ctx.Values().GetString("UserID")
 	if payerId == "" {
 		ctx.StatusCode(iris.StatusUnauthorized)
@@ -28,9 +30,12 @@ func CreateTransactionHandler(svc *services.TransactionService, ctx iris.Context
 		return
 	}
 
+	req.PayerID = payerId
+	// Mock DB instance
+	db := initializer.GetDB()
 	// Create the transaction
 	reservedAmount := 0.0
-	transaction, err := svc.InitializeTransaction(ctx, payerId, req.PayeeID, req.Amount, req.TransactionType, req.Status, reservedAmount, req.TransactionID, req.PaymentMethodID, req.PaymentDetails)
+	transaction, err := services.InitializeTransaction(db, ctx, req, reservedAmount)
 	if err != nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		ctx.JSON(map[string]string{"error": err.Error()})
@@ -45,15 +50,8 @@ func CreateTransactionHandler(svc *services.TransactionService, ctx iris.Context
 	})
 }
 
-// type Transaction struct {
-// 	TransactionID string
-// 	PaymentMethod string
-// 	Amount        float64
-// 	Date          string
-// }
-
 // ListTransactionsHandler lists all transactions for the authenticated user
-func ListTransactionsHandler(svc *services.TransactionService, ctx iris.Context) {
+func ListTransactionsHandler(ctx iris.Context) {
 	// Extract authenticated user's ID
 	userID := ctx.Values().GetString("UserID")
 	if userID == "" {
@@ -63,7 +61,7 @@ func ListTransactionsHandler(svc *services.TransactionService, ctx iris.Context)
 	}
 
 	// Fetch transactions
-	transactions, err := svc.ListTransactions(ctx.Request().Context(), userID)
+	transactions, err := services.ListTransactions(ctx.Request().Context(), userID)
 	if err != nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		ctx.JSON(map[string]string{"error": err.Error()})

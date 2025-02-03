@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"poc/initializer"
 	"poc/model"
 	"poc/utils"
 	"time"
@@ -10,33 +11,18 @@ import (
 	"gorm.io/gorm"
 )
 
-type DBInterface interface {
-	Where(query interface{}, args ...interface{}) *gorm.DB
-	First(out interface{}, where ...interface{}) *gorm.DB
-	Create(value interface{}) *gorm.DB
-	Save(value interface{}) *gorm.DB
-}
-
-// UserService provides methods for user-related operations.
-type UserService struct {
-	DB DBInterface
-}
-
-// NewUserService creates a new instance of UserService.
-func NewUserService(db DBInterface) *UserService {
-	return &UserService{DB: db}
-}
-
 // CreateUser creates a new user in the database.
-func (svc *UserService) CreateUser(ctx context.Context, email, password, firstName, lastName string, isPayer, isPayee bool) (*model.User, error) {
+func CreateUser(ctx context.Context, email, password, firstName, lastName string, isPayer, isPayee bool) (*model.User, error) {
+	db := initializer.GetDB()
+
 	// Check if the email already exists
 	var existingUser model.User
-	if err := svc.DB.Where("email = ?", email).First(&existingUser).Error; err == nil {
+	if err := db.Where("email = ?", email).First(&existingUser).Error; err == nil {
 		return nil, errors.New("email already in use")
 	}
 
 	// Hash the password
-	hashedPassword, err := utils.HashPassword(password)
+	hashedPassword, err := utils.HashPasswordWrapper(password)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +40,7 @@ func (svc *UserService) CreateUser(ctx context.Context, email, password, firstNa
 	}
 
 	// Insert user into the database using GORM
-	if err := svc.DB.Create(user).Error; err != nil {
+	if err := db.Create(user).Error; err != nil {
 		return nil, err
 	}
 
@@ -67,7 +53,7 @@ func (svc *UserService) CreateUser(ctx context.Context, email, password, firstNa
 			Balance: 0.0, // Initial balance
 			Status:  "active",
 		}
-		if err := svc.DB.Create(payer).Error; err != nil {
+		if err := db.Create(payer).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -80,7 +66,7 @@ func (svc *UserService) CreateUser(ctx context.Context, email, password, firstNa
 			Balance: 0.0, // Initial balance
 			Status:  "active",
 		}
-		if err := svc.DB.Create(payee).Error; err != nil {
+		if err := db.Create(payee).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -90,11 +76,12 @@ func (svc *UserService) CreateUser(ctx context.Context, email, password, firstNa
 }
 
 // LoginUser checks the credentials and returns the user.
-func (svc *UserService) LoginUser(ctx context.Context, email, password string) (*model.User, error) {
+func LoginUser(ctx context.Context, email, password string) (*model.User, error) {
+	db := initializer.GetDB()
 	var user model.User
 
 	// Fetch user by email
-	if err := svc.DB.Where("email = ?", email).First(&user).Error; err != nil {
+	if err := db.Where("email = ?", email).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("invalid credentials")
 		}
@@ -112,17 +99,18 @@ func (svc *UserService) LoginUser(ctx context.Context, email, password string) (
 
 // LogoutUser handles user logout by invalidating the session (or token).
 // Note: This method doesn't have much logic for now, as session invalidation is handled in the controller.
-func (svc *UserService) LogoutUser(ctx context.Context) error {
+func LogoutUser(ctx context.Context) error {
 	// If you're using sessions or JWT, you'd invalidate here
 	// For example, clear a JWT from the context or database session, if applicable.
 	return nil
 }
 
 // UpdateUser updates the details of a user in the database.
-func (svc *UserService) UpdateUser(ctx context.Context, userID, email, firstName, lastName string, isPayee bool, isPayer bool) error {
+func UpdateUser(ctx context.Context, userID, email, firstName, lastName string, isPayee bool, isPayer bool) error {
+	db := initializer.GetDB()
 	// Fetch the user by ID
 	var user model.User
-	if err := svc.DB.First(&user, "UserID = ?", userID).Error; err != nil {
+	if err := db.First(&user, "UserID = ?", userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("user not found")
 		}
@@ -133,12 +121,10 @@ func (svc *UserService) UpdateUser(ctx context.Context, userID, email, firstName
 	user.Email = email
 	user.FirstName = firstName
 	user.LastName = lastName
-	// user.isPayee = isPayee
-	// user.isPayer = isPayee
 	user.UpdatedAt = time.Now()
 
 	// Save the changes
-	if err := svc.DB.Save(&user).Error; err != nil {
+	if err := db.Save(&user).Error; err != nil {
 		return err
 	}
 
@@ -146,10 +132,11 @@ func (svc *UserService) UpdateUser(ctx context.Context, userID, email, firstName
 }
 
 // UpdatePayer updates the balance of a payer in the database.
-func (svc *UserService) UpdatePayer(ctx context.Context, payerID string, balance float64) error {
+func UpdatePayer(ctx context.Context, payerID string, balance float64) error {
+	db := initializer.GetDB()
 	// Fetch the payer by ID
 	var payer model.Payer
-	if err := svc.DB.First(&payer, "PayerID = ?", payerID).Error; err != nil {
+	if err := db.First(&payer, "PayerID = ?", payerID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("payer not found")
 		}
@@ -161,7 +148,7 @@ func (svc *UserService) UpdatePayer(ctx context.Context, payerID string, balance
 	payer.UpdatedAt = time.Now()
 
 	// Save the changes
-	if err := svc.DB.Save(&payer).Error; err != nil {
+	if err := db.Save(&payer).Error; err != nil {
 		return err
 	}
 
@@ -169,10 +156,11 @@ func (svc *UserService) UpdatePayer(ctx context.Context, payerID string, balance
 }
 
 // UpdatePayee updates the balance of a payee in the database.
-func (svc *UserService) UpdatePayee(ctx context.Context, payeeID string, balance float64) error {
+func UpdatePayee(ctx context.Context, payeeID string, balance float64) error {
+	db := initializer.GetDB()
 	// Fetch the payee by ID
 	var payee model.Payee
-	if err := svc.DB.First(&payee, "PayeeID = ?", payeeID).Error; err != nil {
+	if err := db.First(&payee, "PayeeID = ?", payeeID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("payee not found")
 		}
@@ -184,7 +172,7 @@ func (svc *UserService) UpdatePayee(ctx context.Context, payeeID string, balance
 	payee.UpdatedAt = time.Now()
 
 	// Save the changes
-	if err := svc.DB.Save(&payee).Error; err != nil {
+	if err := db.Save(&payee).Error; err != nil {
 		return err
 	}
 

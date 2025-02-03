@@ -8,7 +8,7 @@ import (
 )
 
 // Secret key for signing the token (use a secure key in production)
-var secretKey = []byte("your-secret-key")
+var SecretKey = []byte("your-secret-key")
 
 // GenerateToken generates a JWT token
 func GenerateToken(userID string) (string, error) {
@@ -22,7 +22,7 @@ func GenerateToken(userID string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	// Sign the token with the secret key
-	signedToken, err := token.SignedString(secretKey)
+	signedToken, err := token.SignedString(SecretKey)
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate token: %v", err)
 	}

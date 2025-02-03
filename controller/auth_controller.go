@@ -8,13 +8,8 @@ import (
 	"github.com/kataras/iris/v12"
 )
 
-// UserController handles HTTP requests for user operations.
-type UserController struct {
-	UserService *services.UserService
-}
-
 // Signup handles user registration (signup).
-func (uc *UserController) Signup(ctx iris.Context) {
+func Signup(ctx iris.Context) {
 	var req struct {
 		Email     string `json:"email"`
 		Password  string `json:"password"`
@@ -32,7 +27,7 @@ func (uc *UserController) Signup(ctx iris.Context) {
 	}
 
 	// Call the UserService to create the user
-	user, err := uc.UserService.CreateUser(ctx.Request().Context(), req.Email, req.Password, req.FirstName, req.LastName, req.IsPayer, req.IsPayee)
+	user, err := services.CreateUser(ctx.Request().Context(), req.Email, req.Password, req.FirstName, req.LastName, req.IsPayer, req.IsPayee)
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
 		ctx.JSON(map[string]string{"error": err.Error()})
@@ -45,7 +40,7 @@ func (uc *UserController) Signup(ctx iris.Context) {
 }
 
 // Login handles user login.
-func (uc *UserController) Login(ctx iris.Context) {
+func Login(ctx iris.Context) {
 	var req struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -59,7 +54,7 @@ func (uc *UserController) Login(ctx iris.Context) {
 	}
 
 	// Call the UserService to verify the credentials
-	user, err := uc.UserService.LoginUser(ctx.Request().Context(), req.Email, req.Password)
+	user, err := services.LoginUser(ctx.Request().Context(), req.Email, req.Password)
 	if err != nil {
 		ctx.StatusCode(http.StatusUnauthorized)
 		ctx.JSON(map[string]string{"error": err.Error()})
@@ -85,7 +80,7 @@ func (uc *UserController) Login(ctx iris.Context) {
 }
 
 // Logout handles user logout.
-func (uc *UserController) Logout(ctx iris.Context) {
+func Logout(ctx iris.Context) {
 	// Invalidate session or token here
 
 	// Respond with success message
@@ -96,8 +91,7 @@ func (uc *UserController) Logout(ctx iris.Context) {
 }
 
 // UpdateUser updates user details.
-func (uc *UserController) UpdateUser(ctx iris.Context) {
-	// userID := ctx.Params().Get("id")
+func UpdateUser(ctx iris.Context) {
 	userID := ctx.Values().GetString("UserID")
 	var req struct {
 		Email     string `json:"email"`
@@ -115,7 +109,7 @@ func (uc *UserController) UpdateUser(ctx iris.Context) {
 	}
 
 	// Call the service to update the user
-	err := uc.UserService.UpdateUser(ctx, userID, req.Email, req.FirstName, req.LastName, req.IsPayee, req.IsPayer)
+	err := services.UpdateUser(ctx, userID, req.Email, req.FirstName, req.LastName, req.IsPayee, req.IsPayer)
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
 		ctx.JSON(map[string]string{"error": err.Error()})
@@ -127,13 +121,12 @@ func (uc *UserController) UpdateUser(ctx iris.Context) {
 }
 
 // UpdatePayer updates payer-specific details like balance.
-func (uc *UserController) UpdatePayer(ctx iris.Context) {
+func UpdatePayer(ctx iris.Context) {
 	var req struct {
 		PayerID string  `json:"payer_id"`
 		Amount  float64 `json:"amount"`
 	}
 
-	// fmt.Println("req ", req.PayerID, req.Amount, req)
 	// Decode the incoming request
 	if err := ctx.ReadJSON(&req); err != nil {
 		ctx.StatusCode(http.StatusBadRequest)
@@ -142,7 +135,7 @@ func (uc *UserController) UpdatePayer(ctx iris.Context) {
 	}
 
 	// Call the service to update the payer
-	err := uc.UserService.UpdatePayer(ctx, req.PayerID, req.Amount)
+	err := services.UpdatePayer(ctx, req.PayerID, req.Amount)
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
 		ctx.JSON(map[string]string{"error": err.Error()})
@@ -154,12 +147,7 @@ func (uc *UserController) UpdatePayer(ctx iris.Context) {
 }
 
 // UpdatePayee updates payee-specific details like balance.
-func (uc *UserController) UpdatePayee(ctx iris.Context) {
-	// payeeID := ctx.Params().Get("id")
-	// var req struct {
-	// 	Balance float64 `json:"balance"`
-	// }
-
+func UpdatePayee(ctx iris.Context) {
 	var req struct {
 		PayeeID string  `json:"payee_id"`
 		Amount  float64 `json:"amount"`
@@ -173,7 +161,7 @@ func (uc *UserController) UpdatePayee(ctx iris.Context) {
 	}
 
 	// Call the service to update the payee
-	err := uc.UserService.UpdatePayee(ctx, req.PayeeID, req.Amount)
+	err := services.UpdatePayee(ctx, req.PayeeID, req.Amount)
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
 		ctx.JSON(map[string]string{"error": err.Error()})

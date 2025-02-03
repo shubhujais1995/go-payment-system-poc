@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"poc/initializer"
 	"poc/model"
 	"poc/utils"
 
@@ -47,48 +48,49 @@ func NewTransactionService(db *gorm.DB, pmService *PaymentMethodService) *Transa
 	}
 }
 
-func (svc *TransactionService) InitializeTransaction(ctx context.Context, payerID, payeeID string, amount float64, transactionType, status string, reservedAmount float64, transactionID, paymentMethodID string, paymentDetail model.PaymentDetails) (*model.Transaction, error) {
-	var transaction *model.Transaction
+func InitializeTransaction(db *gorm.DB, ctx context.Context, req model.ProcessPaymentInput, reservedAmout float64) (*model.Transaction, error) {
 
-	err := svc.DB.Transaction(func(tx *gorm.DB) error {
+	var transaction *model.Transaction
+	fmt.Println("= Payer Id = ", req.PayerID, " = Payee Id = ", req.PayeeID)
+	err := db.Transaction(func(tx *gorm.DB) error {
 		// Step 1: Retrieve payer and payee
-		payer, payee, err := svc.getPayerAndPayee(tx, payerID, payeeID)
+		payer, payee, err := getPayerAndPayee(tx, req.PayerID, req.PayeeID)
 		if err != nil {
 			return err
 		}
 
 		// Step 2: Validate payment method
-		if err := svc.validatePaymentMethod(ctx, payerID, paymentMethodID, paymentDetail); err != nil {
+		if err := validatePaymentMethod(ctx, req.PayerID, req.PaymentMethodID, req.PaymentDetails); err != nil {
 			return err
 		}
 
-		if err := svc.validateTransactionPayload(tx, transactionID, payerID, payeeID, amount, transactionType, paymentMethodID); err != nil {
+		if err := validateTransactionPayload(tx, req.TransactionID, req.PayerID, req.PayeeID, req.Amount, req.TransactionType, req.PaymentMethodID); err != nil {
 			return err
 		}
 
 		// // Step 3: Check for duplicate transactions
-		// if svc.isDuplicateTransaction(tx, payerID, payeeID, amount, transactionType) {
+		// if isDuplicateTransaction(tx, payerID, payeeID, amount, transactionType) {
 		// 	return errors.New("duplicate transaction detected")
 		// }
 
 		// Step 4: Check balance
-		if !svc.hasSufficientBalance(payer, amount) {
+		if !hasSufficientBalance(payer, req.Amount) {
 			return errors.New("insufficient balance")
 		}
 
 		// Step 5: Create the transaction
-		transaction, err = svc.createTransaction(tx, payer, payee, amount, transactionType, status, reservedAmount, paymentMethodID, paymentDetail)
+		transaction, err = createTransaction(tx, payer, payee, req.Amount, req.TransactionType, req.Status, reservedAmout, req.PaymentMethodID, req.PaymentDetails)
 		if err != nil {
 			return err
 		}
 
 		// Step 6: Process payment
-		if err := svc.processPayment(tx, transaction); err != nil {
+		if err := processPayment(tx, transaction); err != nil {
 			return err
 		}
 
 		// Step 7: Create audit entry
-		if err := svc.createAuditEntry(tx, transaction); err != nil {
+		if err := createAuditEntry(tx, transaction); err != nil {
 			return err
 		}
 
@@ -99,17 +101,17 @@ func (svc *TransactionService) InitializeTransaction(ctx context.Context, payerI
 	return transaction, err
 }
 
-func (svc *TransactionService) getPayerAndPayee(tx *gorm.DB, payerID, payeeID string) (*model.Payer, *model.Payee, error) {
-	payer, err := svc.getPayer(tx, payerID)
+func getPayerAndPayee(tx *gorm.DB, payerID, payeeID string) (*model.Payer, *model.Payee, error) {
+	payer, err := getPayer(tx, payerID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	payee, err := svc.getPayee(tx, payeeID)
+	payee, err := getPayee(tx, payeeID)
 	if err != nil {
 		return nil, nil, err
 	}
-
+	fmt.Println("Payer & Payee", payer, payee)
 	if payer.PayerID == payee.PayeeID {
 		return nil, nil, errors.New("payer cannot pay themselves")
 	}
@@ -117,7 +119,7 @@ func (svc *TransactionService) getPayerAndPayee(tx *gorm.DB, payerID, payeeID st
 	return payer, payee, nil
 }
 
-func (svc *TransactionService) getPayer(tx *gorm.DB, payerID string) (*model.Payer, error) {
+func getPayer(tx *gorm.DB, payerID string) (*model.Payer, error) {
 	var payer model.Payer
 	if err := tx.First(&payer, "PayerID = ?", payerID).Error; err != nil {
 		errorLogger.Printf("Failed to retrieve payer with PayerID %s: %v\n", payerID, err)
@@ -126,7 +128,7 @@ func (svc *TransactionService) getPayer(tx *gorm.DB, payerID string) (*model.Pay
 	return &payer, nil
 }
 
-func (svc *TransactionService) getPayee(tx *gorm.DB, payeeID string) (*model.Payee, error) {
+func getPayee(tx *gorm.DB, payeeID string) (*model.Payee, error) {
 	var payee model.Payee
 	if err := tx.First(&payee, "PayeeID = ?", payeeID).Error; err != nil {
 		errorLogger.Printf("Failed to retrieve payee with PayeeID %s: %v\n", payeeID, err)
@@ -134,9 +136,9 @@ func (svc *TransactionService) getPayee(tx *gorm.DB, payeeID string) (*model.Pay
 	}
 	return &payee, nil
 }
-func (svc *TransactionService) validatePaymentMethod(ctx context.Context, payerID, paymentMethodID string, paymentDetail model.PaymentDetails) error {
+func validatePaymentMethod(ctx context.Context, payerID, paymentMethodID string, paymentDetail model.PaymentDetails) error {
 	// Fetch the payment method by payer ID and payment method ID
-	paymentMethod, err := svc.GetPaymentMethodByPayerID(ctx, payerID, paymentMethodID)
+	paymentMethod, err := GetPaymentMethodByPayerID(ctx, payerID, paymentMethodID)
 	if err != nil {
 		return err
 	}
@@ -147,16 +149,17 @@ func (svc *TransactionService) validatePaymentMethod(ctx context.Context, payerI
 	}
 
 	// Validate payment details (card number, expiry date)
-	if err := svc.ValidatePaymentDetails(paymentMethod, paymentDetail); err != nil {
+	if err := ValidatePaymentDetails(paymentMethod, paymentDetail); err != nil {
 		return fmt.Errorf("invalid payment details: %v", err)
 	}
 
 	return nil
 }
-func (svc *TransactionService) GetPaymentMethodByPayerID(ctx context.Context, payerID, paymentMethodID string) (*model.PaymentMethod, error) {
+func GetPaymentMethodByPayerID(ctx context.Context, payerID, paymentMethodID string) (*model.PaymentMethod, error) {
+	db := initializer.GetDB()
 	var paymentMethod model.PaymentMethod
 
-	if err := svc.DB.Where("payer_id = ? AND payment_method_id = ?", payerID, paymentMethodID).First(&paymentMethod).Error; err != nil {
+	if err := db.Where("payer_id = ? AND payment_method_id = ?", payerID, paymentMethodID).First(&paymentMethod).Error; err != nil {
 		errorLogger.Printf("Failed to retrieve payment method for payerID %s with paymentMethodID %s: %v\n", payerID, paymentMethodID, err)
 		return nil, fmt.Errorf("no valid payment method found for payer %s with paymentMethodID %s: %v", payerID, paymentMethodID, err)
 	}
@@ -164,15 +167,15 @@ func (svc *TransactionService) GetPaymentMethodByPayerID(ctx context.Context, pa
 	return &paymentMethod, nil
 }
 
-func (svc *TransactionService) ValidatePaymentDetails(paymentMethod *model.PaymentMethod, paymentDetail model.PaymentDetails) error {
-	if paymentMethod.CardNumber != paymentDetail.CardNumber || paymentMethod.ExpiryDate != paymentDetail.ExpiryDate {
-		errorLogger.Println("Payment details validation failed: card number or expiry date mismatch")
-		return errors.New("invalid payment details")
-	}
-	return nil
-}
+// func ValidatePaymentDetails(paymentMethod *model.PaymentMethod, paymentDetail model.PaymentDetails) error {
+// 	if paymentMethod.CardNumber != paymentDetail.CardNumber || paymentMethod.ExpiryDate != paymentDetail.ExpiryDate {
+// 		errorLogger.Println("Payment details validation failed: card number or expiry date mismatch")
+// 		return errors.New("invalid payment details")
+// 	}
+// 	return nil
+// }
 
-// func (svc *TransactionService) isDuplicateTransaction(tx *gorm.DB, payerID, payeeID string, amount float64, transactionType string) bool {
+// func isDuplicateTransaction(tx *gorm.DB, payerID, payeeID string, amount float64, transactionType string) bool {
 // 	var count int64
 // 	if err := tx.Model(&model.Transaction{}).Where("payer_id = ? AND payee_id = ? AND amount = ? AND transaction_type = ?", payerID, payeeID, amount, transactionType).Count(&count).Error; err != nil {
 // 		errorLogger.Printf("Error checking duplicate transaction for payer %s and payee %s: %v\n", payerID, payeeID, err)
@@ -181,7 +184,7 @@ func (svc *TransactionService) ValidatePaymentDetails(paymentMethod *model.Payme
 // 	return count > 0
 // }
 
-func (svc *TransactionService) hasSufficientBalance(payer *model.Payer, amount float64) bool {
+func hasSufficientBalance(payer *model.Payer, amount float64) bool {
 	if payer.Balance < amount {
 		errorLogger.Printf("Insufficient balance for payer %s. Available: %.2f, Required: %.2f\n", payer.PayerID, payer.Balance, amount)
 		return false
@@ -189,7 +192,7 @@ func (svc *TransactionService) hasSufficientBalance(payer *model.Payer, amount f
 	return true
 }
 
-func (svc *TransactionService) createTransaction(tx *gorm.DB, payer *model.Payer, payee *model.Payee, amount float64, transactionType, status string, reservedAmount float64, paymentMethodID string, paymentDetail model.PaymentDetails) (*model.Transaction, error) {
+func createTransaction(tx *gorm.DB, payer *model.Payer, payee *model.Payee, amount float64, transactionType, status string, reservedAmount float64, paymentMethodID string, paymentDetail model.PaymentDetails) (*model.Transaction, error) {
 	transactionID := utils.GenerateUniqueID()
 	transaction := &model.Transaction{
 		TransactionID:   transactionID,
@@ -212,17 +215,17 @@ func (svc *TransactionService) createTransaction(tx *gorm.DB, payer *model.Payer
 	return transaction, nil
 }
 
-func (svc *TransactionService) processPayment(tx *gorm.DB, transaction *model.Transaction) error {
-	if err := svc.debitAccount(tx, transaction.PayerID, transaction.Amount); err != nil {
-		if err := svc.logFailedTransaction(tx, transaction.TransactionID, "Transaction Failed", "Failed to debit payer"); err != nil {
+func processPayment(tx *gorm.DB, transaction *model.Transaction) error {
+	if err := debitAccount(tx, transaction.PayerID, transaction.Amount); err != nil {
+		if err := logFailedTransaction(tx, transaction.TransactionID, "Transaction Failed", "Failed to debit payer"); err != nil {
 			errorLogger.Printf("Failed to log failed transaction audit in debitAccount: %v\n", err)
 		}
 		errorLogger.Printf("Failed to debit payer %s for transaction %s: %v\n", transaction.PayerID, transaction.TransactionID, err)
 		return err
 	}
 
-	if err := svc.creditAccount(tx, transaction.PayeeID, transaction.Amount); err != nil {
-		if err := svc.logFailedTransaction(tx, transaction.TransactionID, "Transaction Failed", "Failed to credit payee"); err != nil {
+	if err := creditAccount(tx, transaction.PayeeID, transaction.Amount); err != nil {
+		if err := logFailedTransaction(tx, transaction.TransactionID, "Transaction Failed", "Failed to credit payee"); err != nil {
 			errorLogger.Printf("Failed to log failed transaction audit in creditAccount: %v\n", err)
 		}
 		errorLogger.Printf("Failed to credit payee %s for transaction %s: %v\n", transaction.PayeeID, transaction.TransactionID, err)
@@ -231,7 +234,7 @@ func (svc *TransactionService) processPayment(tx *gorm.DB, transaction *model.Tr
 
 	transaction.Status = "completed"
 	if err := tx.Save(transaction).Error; err != nil {
-		if err := svc.logFailedTransaction(tx, transaction.TransactionID, "Transaction Failed", "Failed to update transaction"); err != nil {
+		if err := logFailedTransaction(tx, transaction.TransactionID, "Transaction Failed", "Failed to update transaction"); err != nil {
 			errorLogger.Printf("Failed to log failed transaction audit in completed state: %v\n", err)
 		}
 		errorLogger.Printf("Failed to update transaction %s to completed: %v\n", transaction.TransactionID, err)
@@ -241,7 +244,7 @@ func (svc *TransactionService) processPayment(tx *gorm.DB, transaction *model.Tr
 	return nil
 }
 
-func (svc *TransactionService) debitAccount(tx *gorm.DB, payerID string, amount float64) error {
+func debitAccount(tx *gorm.DB, payerID string, amount float64) error {
 	if err := tx.Model(&model.Payer{}).Where("PayerID = ?", payerID).Update("Balance", gorm.Expr("Balance - ?", amount)).Error; err != nil {
 		errorLogger.Printf("Failed to debit account for payer %s: %v\n", payerID, err)
 		return fmt.Errorf("failed to debit payer's account: %v", err)
@@ -249,7 +252,7 @@ func (svc *TransactionService) debitAccount(tx *gorm.DB, payerID string, amount 
 	return nil
 }
 
-func (svc *TransactionService) creditAccount(tx *gorm.DB, payeeID string, amount float64) error {
+func creditAccount(tx *gorm.DB, payeeID string, amount float64) error {
 	if err := tx.Model(&model.Payee{}).Where("PayeeId = ?", payeeID).Update("Balance", gorm.Expr("Balance + ?", amount)).Error; err != nil {
 		errorLogger.Printf("Failed to credit account for payee %s: %v\n", payeeID, err)
 		return fmt.Errorf("failed to credit payee's account: %v", err)
@@ -257,7 +260,7 @@ func (svc *TransactionService) creditAccount(tx *gorm.DB, payeeID string, amount
 	return nil
 }
 
-func (svc *TransactionService) validateTransactionPayload(tx *gorm.DB, transactionID, payerID, payeeID string, amount float64, transactionType, paymentMethodID string) error {
+func validateTransactionPayload(tx *gorm.DB, transactionID, payerID, payeeID string, amount float64, transactionType, paymentMethodID string) error {
 	transactionType = strings.ToLower(transactionType)
 
 	validTransactionTypes := map[string]bool{
@@ -283,14 +286,14 @@ func (svc *TransactionService) validateTransactionPayload(tx *gorm.DB, transacti
 		var originalTransaction model.Transaction
 		err := tx.First(&originalTransaction, "transaction_id = ?", transactionID).Error
 		if err != nil {
-			if err := svc.logFailedTransaction(tx, transactionID, "Transaction Failed", "original transaction not found for refund"); err != nil {
+			if err := logFailedTransaction(tx, transactionID, "Transaction Failed", "original transaction not found for refund"); err != nil {
 				errorLogger.Printf("Failed to log failed transaction audit in debitAccount: %v\n", err)
 			}
 			errorLogger.Printf("Original transaction %s not found for refund: %v\n", transactionID, err)
 			return errors.New("original transaction not found for refund")
 		}
 		if originalTransaction.Amount != amount {
-			if err := svc.logFailedTransaction(tx, transactionID, "Transaction Failed", "Refund amount mismatch"); err != nil {
+			if err := logFailedTransaction(tx, transactionID, "Transaction Failed", "Refund amount mismatch"); err != nil {
 				errorLogger.Printf("Failed to log failed transaction audit in debitAccount: %v\n", err)
 			}
 			errorLogger.Printf("Refund amount mismatch: original=%.2f, requested=%.2f\n", originalTransaction.Amount, amount)
@@ -301,25 +304,26 @@ func (svc *TransactionService) validateTransactionPayload(tx *gorm.DB, transacti
 	return nil
 }
 
-func (svc *TransactionService) ListTransactions(ctx context.Context, userID string) ([]model.Transaction, error) {
+func ListTransactions(ctx context.Context, userID string) ([]model.Transaction, error) {
+	db := initializer.GetDB()
 	var transactions []model.Transaction
-	if err := svc.DB.Where("payer_id = ? OR payee_id = ?", userID, userID).Find(&transactions).Error; err != nil {
+	if err := db.Where("payer_id = ? OR payee_id = ?", userID, userID).Find(&transactions).Error; err != nil {
 		errorLogger.Printf("Failed to fetch transactions for user %s: %v\n", userID, err)
 		return nil, fmt.Errorf("failed to fetch transactions: %v", err)
 	}
 	return transactions, nil
 }
 
-func (svc *TransactionService) createAuditEntry(tx *gorm.DB, transaction *model.Transaction) error {
+func createAuditEntry(tx *gorm.DB, transaction *model.Transaction) error {
 	fmt.Println("Transaction details", transaction)
-	err := svc.logAudit(tx, transaction.TransactionID, "Transaction Created", "Transaction successfully created and processed")
+	err := logAudit(tx, transaction.TransactionID, "Transaction Created", "Transaction successfully created and processed")
 	if err != nil {
 		errorLogger.Printf("Failed to create audit entry for transaction %s: %v\n", transaction.TransactionID, err)
 	}
 	return err
 }
 
-func (svc *TransactionService) logFailedTransaction(tx *gorm.DB, transactionID, action, details string) error {
+func logFailedTransaction(tx *gorm.DB, transactionID, action, details string) error {
 	auditLog := model.AuditLog{
 		AuditLogID:    utils.GenerateUniqueID(),
 		TransactionID: transactionID,
@@ -337,7 +341,7 @@ func (svc *TransactionService) logFailedTransaction(tx *gorm.DB, transactionID, 
 	return nil
 }
 
-func (svc *TransactionService) logAudit(tx *gorm.DB, transactionID, action, details string) error {
+func logAudit(tx *gorm.DB, transactionID, action, details string) error {
 	auditLog := model.AuditLog{
 		AuditLogID:    utils.GenerateUniqueID(),
 		TransactionID: transactionID,
