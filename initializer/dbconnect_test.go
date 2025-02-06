@@ -1,40 +1,95 @@
 package initializer
 
 import (
+	"errors"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"gorm.io/gorm"
 )
 
-// MockDB is a mock implementation of a GORM database connection
-type MockDB struct {
-	mock.Mock
-	*gorm.DB
-}
-
-// working utc
-// Test InitializeGORMSpannerClient with a successful connection
-func TestInitializeGORMSpannerClient_Success(t *testing.T) {
-	// Reset dbInstance before running the test
+func TestInitializeGORMSpannerClient(t *testing.T) {
+	// Reset dbInstance before each test
 	dbInstance = nil
 
-	// Mock environment variables
-	os.Setenv("DB_PROJECT_ID", "mock-project")
-	os.Setenv("DB_INSTANCE_ID", "mock-instance")
-	os.Setenv("DB_NAME", "mock-db")
+	// Store original dbOpen function and environment variables
+	originalDBOpen := dbOpen
+	originalProjectID := os.Getenv("DB_PROJECT_ID")
+	originalInstanceID := os.Getenv("DB_INSTANCE_ID")
+	originalDBName := os.Getenv("DB_NAME")
 
-	// Mock the database connection instead of opening a real connection
-	mockDB := &gorm.DB{} // Create a fake GORM DB object
-	dbInstance = mockDB  // Assign the mock DB instance
+	// Restore original values after tests
+	defer func() {
+		dbOpen = originalDBOpen
+		os.Setenv("DB_PROJECT_ID", originalProjectID)
+		os.Setenv("DB_INSTANCE_ID", originalInstanceID)
+		os.Setenv("DB_NAME", originalDBName)
+	}()
 
-	// Call the function
-	db, err := InitializeGORMSpannerClient()
+	t.Run("successful initialization", func(t *testing.T) {
+		dbInstance = nil
+		os.Setenv("DB_PROJECT_ID", "test-project")
+		os.Setenv("DB_INSTANCE_ID", "test-instance")
+		os.Setenv("DB_NAME", "test-db")
 
-	// Assertions
-	assert.Nil(t, err, "Expected no error during database initialization")
-	assert.NotNil(t, db, "Expected a valid DB instance")
-	assert.Equal(t, dbInstance, db, "dbInstance should be set and match the returned DB instance")
+		dbOpen = func(dialector gorm.Dialector, opts ...gorm.Option) (db *gorm.DB, err error) {
+			return &gorm.DB{}, nil
+		}
+
+		db, err := InitializeGORMSpannerClient()
+		assert.NoError(t, err)
+		assert.NotNil(t, db)
+		assert.Equal(t, dbInstance, db)
+	})
+
+	t.Run("return existing instance if already initialized", func(t *testing.T) {
+		mockInstance := &gorm.DB{}
+		dbInstance = mockInstance
+
+		db, err := InitializeGORMSpannerClient()
+		assert.NoError(t, err)
+		assert.Equal(t, mockInstance, db)
+	})
+
+	t.Run("handle database connection error", func(t *testing.T) {
+		dbInstance = nil
+		os.Setenv("DB_PROJECT_ID", "test-project")
+		os.Setenv("DB_INSTANCE_ID", "test-instance")
+		os.Setenv("DB_NAME", "test-db")
+
+		dbOpen = func(dialector gorm.Dialector, opts ...gorm.Option) (db *gorm.DB, err error) {
+			return nil, errors.New("connection failed")
+		}
+
+		db, err := InitializeGORMSpannerClient()
+		assert.Error(t, err)
+		assert.Nil(t, db)
+		assert.Contains(t, err.Error(), "failed to open database")
+	})
+}
+
+func TestGetDB(t *testing.T) {
+	t.Run("get initialized database", func(t *testing.T) {
+		mockInstance := &gorm.DB{}
+		dbInstance = mockInstance
+
+		db := GetDB()
+		assert.Equal(t, mockInstance, db)
+	})
+
+	t.Run("panic when database not initialized", func(t *testing.T) {
+		dbInstance = nil
+
+		assert.Panics(t, func() {
+			GetDB()
+		})
+	})
+}
+
+func TestSetDBForTest(t *testing.T) {
+	dbInstance = nil
+	mockDB := &gorm.DB{}
+	SetDBForTest(mockDB)
+	assert.Equal(t, mockDB, dbInstance)
 }
